@@ -550,10 +550,6 @@ class MainWindow(QMainWindow):
             for c in VLM_CANDIDATES:
                 if c in installed:
                     models.append(c)
-            # 候補にないがインストール済みのモデルも追加
-            for short in installed:
-                if short not in models:
-                    models.append(short)
         except Exception:
             pass
         if not models:
