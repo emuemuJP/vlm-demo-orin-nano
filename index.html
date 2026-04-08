@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VLM Real-time Caption</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #111; color: #fff; font-family: 'Segoe UI', sans-serif; }
+    #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+
+    #video-frame {
+      flex: 1;
+      width: 100%;
+      object-fit: contain;
+      background: #000;
+    }
+
+    #caption-bar {
+      background: rgba(0, 0, 0, 0.85);
+      padding: 16px 24px;
+      font-size: 22px;
+      text-align: center;
+      border-top: 2px solid #4CAF50;
+      min-height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.2s;
+    }
+
+    #status-bar {
+      background: #1a1a1a;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: #888;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status-dot.idle { background: #4CAF50; }
+    .status-dot.processing { background: #FF9800; animation: pulse 1s infinite; }
+    .status-dot.disconnected { background: #f44336; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <img id="video-frame" src="/video_feed" alt="Camera Feed" />
+    <div id="caption-bar">起動中...</div>
+    <div id="status-bar">
+      <span>
+        <span id="status-dot" class="status-dot idle"></span>
+        <span id="status-text">接続中...</span>
+      </span>
+      <span id="update-time"></span>
+    </div>
+  </div>
+
+  <script>
+    const captionBar = document.getElementById('caption-bar');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const updateTime = document.getElementById('update-time');
+
+    let ws;
+    let reconnectTimer;
+
+    function connect() {
+      ws = new WebSocket(`ws://${location.host}/ws`);
+
+      ws.onopen = () => {
+        statusDot.className = 'status-dot idle';
+        statusText.textContent = '接続済み';
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.caption) {
+          captionBar.style.opacity = 0;
+          setTimeout(() => {
+            captionBar.textContent = data.caption;
+            captionBar.style.opacity = 1;
+          }, 150);
+        }
+
+        if (data.processing) {
+          statusDot.className = 'status-dot processing';
+          statusText.textContent = 'VLM 処理中...';
+        } else {
+          statusDot.className = 'status-dot idle';
+          statusText.textContent = '待機中';
+        }
+
+        if (data.timestamp) {
+          const d = new Date(data.timestamp * 1000);
+          updateTime.textContent = `最終更新: ${d.toLocaleTimeString('ja-JP')}`;
+        }
+      };
+
+      ws.onclose = () => {
+        statusDot.className = 'status-dot disconnected';
+        statusText.textContent = '切断 — 再接続中...';
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>
