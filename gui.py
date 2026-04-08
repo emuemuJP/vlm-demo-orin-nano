@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
 
 # ===== 設定 =====
 CAMERA_SOURCE = 0
-DEFAULT_VLM_MODEL = "moondream"
+DEFAULT_VLM_MODEL = "gemma4:e2b"
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_BASE_URL = "http://localhost:11434"
 VLM_IMAGE_MAX_SIZE = 640           # VLM 入力画像の最大辺 (小さいほど高速)
@@ -39,11 +39,6 @@ EN_ONLY_MODELS = {"moondream"}
 VLM_CANDIDATES = [
     "moondream",
     "gemma4:e2b",
-    "gemma4:e4b",
-    "gemma3:4b",
-    "qwen2.5vl:3b",
-    "qwen2.5vl:7b",
-    "llava:7b",
 ]
 
 HISTORY_DIR = Path(__file__).parent / "history"
@@ -315,13 +310,13 @@ class MainWindow(QMainWindow):
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(0)
 
-        caption_header = QLabel("Caption")
-        caption_header.setAlignment(Qt.AlignCenter)
-        caption_header.setStyleSheet(
+        self.caption_header = QLabel(f"Caption [{DEFAULT_VLM_MODEL}]")
+        self.caption_header.setAlignment(Qt.AlignCenter)
+        self.caption_header.setStyleSheet(
             "background: #1a1a1a; color: #2196F3; font-size: 16px; "
             "font-weight: bold; padding: 4px; border-top: 1px solid #333;"
         )
-        info_layout.addWidget(caption_header)
+        info_layout.addWidget(self.caption_header)
 
         self.caption_label = QLabel("起動中...")
         self.caption_label.setAlignment(Qt.AlignCenter)
@@ -340,6 +335,7 @@ class MainWindow(QMainWindow):
         self.model_combo.setStyleSheet(
             "QComboBox { background: #222; color: white; padding: 6px; border: 1px solid #555; font-size: 14px; }"
             "QComboBox:disabled { color: #666; }"
+            "QComboBox QAbstractItemView { background: #222; color: white; selection-background-color: #555; selection-color: white; }"
         )
         self.model_combo.setEnabled(False)
         self._populate_models()
@@ -544,19 +540,27 @@ class MainWindow(QMainWindow):
         models = []
         try:
             resp = httpx.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5.0)
-            installed = {m["name"] for m in resp.json().get("models", [])}
+            installed = {}
+            for m in resp.json().get("models", []):
+                name = m["name"]
+                # "moondream:latest" → "moondream" に正規化
+                short = name.rsplit(":latest", 1)[0] if name.endswith(":latest") else name
+                installed[short] = name
+            # 候補リストにあるものを順番に追加
             for c in VLM_CANDIDATES:
                 if c in installed:
                     models.append(c)
+            # 候補にないがインストール済みのモデルも追加
+            for short in installed:
+                if short not in models:
+                    models.append(short)
         except Exception:
             pass
-        # 候補にないがインストール済みのモデルも追加 (手動 pull 分)
         if not models:
             models = [DEFAULT_VLM_MODEL]
         self.model_combo.clear()
         for m in models:
             self.model_combo.addItem(m)
-        # 現在のモデルを選択
         idx = self.model_combo.findText(DEFAULT_VLM_MODEL)
         if idx >= 0:
             self.model_combo.setCurrentIndex(idx)
@@ -565,6 +569,7 @@ class MainWindow(QMainWindow):
         self.caption_btn.setEnabled(True)
         self.model_combo.setEnabled(True)
         self.switch_btn.setEnabled(True)
+        self.caption_header.setText(f"Caption [{self.vlm_thread.model}]")
 
     def on_switch_model(self):
         new_model = self.model_combo.currentText()
@@ -580,6 +585,7 @@ class MainWindow(QMainWindow):
         idx = self.model_combo.findText(model_name)
         if idx >= 0:
             self.model_combo.setCurrentIndex(idx)
+        self.caption_header.setText(f"Caption [{model_name}]")
 
     def on_caption_click(self):
         self.caption_btn.setEnabled(False)
